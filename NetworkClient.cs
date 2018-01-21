@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -12,10 +13,19 @@ namespace CarmineCrystal.Networking
 {
 	public class NetworkClient : IDisposable
 	{
+		public IPAddress ConnectedIP => ((IPEndPoint)Client?.Client.RemoteEndPoint).Address;
+		public bool IsConnected => Client.Connected;
+		public bool DataAvailable => _NetworkConnection?.DataAvailable ?? false;
+
+		private static DelegateMessageProcessingModule<PingRequest> PingProcessingModule = new DelegateMessageProcessingModule<PingRequest>((RunTarget, Sender) => Sender.Send(new PingResponse() { Time = RunTarget.Time }));
+
 		private List<Response> ResponseBuffer = new List<Response>();
 		private TcpClient Client;
-		private NetworkStream _Connection;
-		private NetworkStream Connection
+
+		private NetworkStream _NetworkConnection;
+		private CryptoStream _CryptoWriteConnection;
+		private CryptoStream _CryptoReadConnection;
+		private Stream WriteConnection
 		{
 			get
 			{
@@ -24,11 +34,11 @@ namespace CarmineCrystal.Networking
 					return null;
 				}
 
-				if (_Connection == null)
+				if (_NetworkConnection == null)
 				{
 					try
 					{
-						_Connection = Client?.GetStream();
+						_NetworkConnection = Client?.GetStream();
 					}
 					catch (InvalidOperationException)
 					{
@@ -37,14 +47,48 @@ namespace CarmineCrystal.Networking
 					}
 				}
 
-				return _Connection;
+				if (_CryptoWriteConnection != null)
+				{
+					return _CryptoWriteConnection;
+				}
+				else
+				{
+					return _NetworkConnection;
+				}
 			}
 		}
+		private Stream ReadConnection
+		{
+			get
+			{
+				if (Disposed)
+				{
+					return null;
+				}
 
-		private static DelegateMessageProcessingModule<PingRequest> PingProcessingModule = new DelegateMessageProcessingModule<PingRequest>((RunTarget, Sender) => Sender.Send(new PingResponse() { Time = RunTarget.Time }));
+				if (_NetworkConnection == null)
+				{
+					try
+					{
+						_NetworkConnection = Client?.GetStream();
+					}
+					catch (InvalidOperationException)
+					{
+						Dispose();
+						return null;
+					}
+				}
 
-		public IPAddress ConnectedIP => ((IPEndPoint)Client?.Client.RemoteEndPoint).Address;
-		public bool IsConnected => Client.Connected;
+				if (_CryptoReadConnection != null)
+				{
+					return _CryptoReadConnection;
+				}
+				else
+				{
+					return _NetworkConnection;
+				}
+			}
+		}
 
 		private MessageProcessingModule[] ProcessingModules;
 
@@ -58,11 +102,10 @@ namespace CarmineCrystal.Networking
 
 		public NetworkClient(string Host, int Port, params MessageProcessingModule[] ProcessingModules)
 		{
-			Client = new TcpClient(AddressFamily.InterNetwork);
+			Client = new TcpClient(AddressFamily.InterNetwork | AddressFamily.InterNetworkV6);
 			this.ProcessingModules = ProcessingModules;
 
-			Connect(Host, Port);
-			
+			Connect(Host, Port);		
 		}
 
 		private void Connect(string Host, int Port)
@@ -75,6 +118,7 @@ namespace CarmineCrystal.Networking
 			{
 				throw;
 			}
+
 			new Task(LoopReceive).Start();
 		}
 
@@ -82,14 +126,14 @@ namespace CarmineCrystal.Networking
 		{
 			lock (Client)
 			{
-				if (!Client.Connected || !Client.Client.Connected || Connection == null)
+				if (!Client.Connected || WriteConnection == null)
 				{
 					throw new SocketException((int)SocketError.NotConnected);
 				}
 
 				try
 				{
-					Value.SerializeInto(Connection);
+					Value.SerializeInto(WriteConnection);
 				}
 				catch (IOException)
 				{
@@ -124,6 +168,33 @@ namespace CarmineCrystal.Networking
 			}
 
 			return Response;
+		}
+
+		public async Task InitializeEncryption()
+		{
+			int RSAKeySize = 4096;
+			int AESKeySize = 256;
+
+			RSA RSAEncryption = RSA.Create();
+			RSAEncryption.KeySize = RSAKeySize;
+
+			RSAParameters PublicParameters = RSAEncryption.ExportParameters(false);
+
+			KeyExchangeRequest Request = new KeyExchangeRequest() { RSAKeySize = RSAKeySize, AESKeySize = AESKeySize, RSAExponent = PublicParameters.Exponent, RSAModulus = PublicParameters.Modulus };
+			KeyExchangeResponse Response = await Send<KeyExchangeResponse>(Request);
+
+			if (Response?.Accepted ?? false)
+			{
+				AesManaged Cryptor = new AesManaged();
+				Cryptor.KeySize = AESKeySize;
+				Cryptor.IV = RSAEncryption.DecryptValue(Response.EncryptedAESIV);
+				Cryptor.Key = RSAEncryption.DecryptValue(Response.EncryptedAESKey);
+				Cryptor.Mode = CipherMode.CBC;
+				Cryptor.Padding = PaddingMode.PKCS7;
+
+				_CryptoWriteConnection = new CryptoStream(_NetworkConnection, Cryptor.CreateEncryptor(), CryptoStreamMode.Write);
+				_CryptoReadConnection = new CryptoStream(_NetworkConnection, Cryptor.CreateDecryptor(), CryptoStreamMode.Read);
+			}
 		}
 
 		private async void LoopReceive()
@@ -168,17 +239,17 @@ namespace CarmineCrystal.Networking
 					return null;
 				}
 
-				if (Connection == null || !Client.Connected)
+				if (ReadConnection == null || !Client.Connected)
 				{
 					throw new SocketException((int)SocketError.NotConnected);
 				}
 
-				while (!Connection.DataAvailable)
+				if (!DataAvailable)
 				{
 					return null;
 				}
 
-				return Message.DeserializeFrom(Connection);
+				return Message.DeserializeFrom(ReadConnection);
 			}
 		}
 
@@ -187,7 +258,11 @@ namespace CarmineCrystal.Networking
 		{
 			lock (Client)
 			{
-				Client.Dispose();
+				_CryptoWriteConnection?.Dispose();
+				_CryptoReadConnection?.Dispose();
+				_NetworkConnection?.Dispose();
+
+				Client?.Dispose();
 				Disposed = true;
 			}
 		}

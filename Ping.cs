@@ -6,14 +6,14 @@ using System.Text;
 namespace CarmineCrystal.Networking
 {
 	[ProtoContract]
-	public class PingRequest : Request
+	internal class PingRequest : Request
 	{
 		[ProtoMember(1)]
 		public DateTime Time;
 	}
 
 	[ProtoContract]
-	public class PingResponse : Response
+	internal class PingResponse : Response
 	{
 		[ProtoMember(1)]
 		public DateTime Time;
