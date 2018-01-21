@@ -102,7 +102,7 @@ namespace CarmineCrystal.Networking
 
 		public NetworkClient(string Host, int Port, params MessageProcessingModule[] ProcessingModules)
 		{
-			Client = new TcpClient(AddressFamily.InterNetwork | AddressFamily.InterNetworkV6);
+			Client = new TcpClient(AddressFamily.InterNetwork);
 			this.ProcessingModules = ProcessingModules;
 
 			Connect(Host, Port);		

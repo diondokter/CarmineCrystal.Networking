@@ -23,6 +23,11 @@ namespace CarmineCrystal.Networking
 
 		public static void Start(int Port, params MessageProcessingModule[] ProcessingModules)
 		{
+			if (Started)
+			{
+				return;
+			}
+
 			NetworkServer.ProcessingModules = ProcessingModules;
 
 			Listener = new TcpListener(IPAddress.Any, Port);
@@ -35,11 +40,17 @@ namespace CarmineCrystal.Networking
 
 		public static void Stop()
 		{
+			if (!Started)
+			{
+				return;
+			}
+
 			ListenerCancelToken.Cancel();
 			Listener?.Stop();
 			Listener = null;
 
 			_Clients.ForEach(x => x.Dispose());
+			_Clients.Clear();
 			Started = false;
 		}
 
@@ -47,10 +58,14 @@ namespace CarmineCrystal.Networking
 		{
 			while (Listener != null)
 			{
-				TcpClient NewClient = await Listener.AcceptTcpClientAsync();
-				NetworkClient NewNetworkClient = new NetworkClient(NewClient, ProcessingModules);
-				_Clients.Add(NewNetworkClient);
-				ClientAdded?.Invoke(NewNetworkClient);
+				try
+				{
+					TcpClient NewClient = await Listener.AcceptTcpClientAsync();
+					NetworkClient NewNetworkClient = new NetworkClient(NewClient, ProcessingModules);
+					_Clients.Add(NewNetworkClient);
+					ClientAdded?.Invoke(NewNetworkClient);
+				}
+				catch (ObjectDisposedException) { }
 			}
 		}
 
