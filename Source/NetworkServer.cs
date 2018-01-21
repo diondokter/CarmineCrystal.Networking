@@ -69,7 +69,7 @@ namespace CarmineCrystal.Networking
 			}
 		}
 
-		public static void BroadCast(Message message)
+		public static void Broadcast(Message message)
 		{
 			if (message is Request)
 			{
@@ -80,6 +80,23 @@ namespace CarmineCrystal.Networking
 			for (int i = Clients.Count - 1; i >= 0; i--)
 			{
 				Clients[i].Send(message);
+			}
+		}
+
+		public static void BroadcastEncrypted(Message message)
+		{
+			if (message is Request)
+			{
+				throw new ArgumentException("A request message can't be broadcast because there is no way to listen for the responses properly.", nameof(message));
+			}
+
+			// Reverse order so that if a client gets removed, it will not skip an other client
+			for (int i = Clients.Count - 1; i >= 0; i--)
+			{
+				if (Clients[i].HasEncryptedConnection)
+				{
+					Clients[i].SendEncrypted(message);
+				}
 			}
 		}
 
