@@ -72,7 +72,12 @@ namespace CarmineCrystal.Networking.Tests
 			bool EncryptionEnabled = await TestClient.InitializeEncryption();
 			bool EncryptionClientEnabled = TestClient.HasEncryptedConnection;
 
-			PingResponse Response = await TestClient.Send<PingResponse>(new PingRequest() { Time = DateTime.FromBinary(12) }, false);
+			PingResponse Response = await TestClient.SendEncrypted<PingResponse>(new PingRequest() { Time = DateTime.FromBinary(12) });
+			Response = await TestClient.SendEncrypted<PingResponse>(new PingRequest() { Time = DateTime.FromBinary(12) });
+			Response = await TestClient.SendEncrypted<PingResponse>(new PingRequest() { Time = DateTime.FromBinary(12) });
+			Response = await TestClient.SendEncrypted<PingResponse>(new PingRequest() { Time = DateTime.FromBinary(12) });
+			Response = await TestClient.SendEncrypted<PingResponse>(new PingRequest() { Time = DateTime.FromBinary(12) });
+			Response = await TestClient.SendEncrypted<PingResponse>(new PingRequest() { Time = DateTime.FromBinary(12) });
 
 			NetworkServer.Stop();
 			TestClient.Dispose();
