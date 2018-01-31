@@ -18,6 +18,7 @@ namespace CarmineCrystal.Networking
 		private static List<NetworkClient> _Clients = new List<NetworkClient>();
 		public static ReadOnlyCollection<NetworkClient> Clients => _Clients.AsReadOnly();
 		private static TcpListener Listener;
+		private static TcpListener ListenerV6;
 		private static CancellationTokenSource ListenerCancelToken;
 		private static MessageProcessingModule[] ProcessingModules;
 
@@ -30,11 +31,15 @@ namespace CarmineCrystal.Networking
 
 			NetworkServer.ProcessingModules = ProcessingModules;
 
-			Listener = new TcpListener(IPAddress.IPv6Any, Port);
+			Listener = new TcpListener(IPAddress.Any, Port);
 			Listener.Start();
 
+			ListenerV6 = new TcpListener(IPAddress.IPv6Any, Port);
+			ListenerV6.Start();
+
 			ListenerCancelToken = new CancellationTokenSource();
-			new Task(Listen, ListenerCancelToken.Token).Start();
+			new Task(() => Listen(Listener), ListenerCancelToken.Token).Start();
+			new Task(() => Listen(ListenerV6), ListenerCancelToken.Token).Start();
 			Started = true;
 		}
 
@@ -46,21 +51,24 @@ namespace CarmineCrystal.Networking
 			}
 
 			ListenerCancelToken.Cancel();
+
 			Listener?.Stop();
 			Listener = null;
+			ListenerV6?.Stop();
+			ListenerV6 = null;
 
 			_Clients.ForEach(x => x.Dispose());
 			_Clients.Clear();
 			Started = false;
 		}
 
-		private static async void Listen()
+		private static async void Listen(TcpListener TargetListener)
 		{
-			while (Listener != null)
+			while (TargetListener != null)
 			{
 				try
 				{
-					TcpClient NewClient = await Listener.AcceptTcpClientAsync();
+					TcpClient NewClient = await TargetListener.AcceptTcpClientAsync();
 					NetworkClient NewNetworkClient = new NetworkClient(NewClient, ProcessingModules);
 					_Clients.Add(NewNetworkClient);
 					ClientAdded?.Invoke(NewNetworkClient);

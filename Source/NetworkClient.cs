@@ -64,22 +64,8 @@ namespace CarmineCrystal.Networking
 
 		public NetworkClient(string Host, int Port, params MessageProcessingModule[] ProcessingModules)
 		{
-			Client = new TcpClient(AddressFamily.InterNetworkV6);
+			Client = new TcpClient(Host, Port);
 			this.ProcessingModules = ProcessingModules;
-
-			Connect(Host, Port);		
-		}
-
-		private void Connect(string Host, int Port)
-		{
-			try
-			{
-				Client.ConnectAsync(Host, Port).Wait();
-			}
-			catch
-			{
-				throw;
-			}
 
 			new Task(LoopReceive).Start();
 		}
