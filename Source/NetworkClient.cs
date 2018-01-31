@@ -64,7 +64,7 @@ namespace CarmineCrystal.Networking
 
 		public NetworkClient(string Host, int Port, params MessageProcessingModule[] ProcessingModules)
 		{
-			Client = new TcpClient(AddressFamily.InterNetwork);
+			Client = new TcpClient(AddressFamily.InterNetworkV6);
 			this.ProcessingModules = ProcessingModules;
 
 			Connect(Host, Port);		
@@ -89,7 +89,12 @@ namespace CarmineCrystal.Networking
 			Send(Value, true);
 		}
 
-		public void Send(Message Value, bool Encrypted = false)
+		public void Send(Message Value)
+		{
+			Send(Value, HasEncryptedConnection);
+		}
+
+		public void Send(Message Value, bool Encrypted)
 		{
 			lock (Client)
 			{
@@ -129,7 +134,12 @@ namespace CarmineCrystal.Networking
 			return await Send<T>(Value, true, WaitTime);
 		}
 
-		public async Task<T> Send<T>(Request Value, bool Encrypted = false, long WaitTime = 2000) where T : Response
+		public async Task<T> Send<T>(Request Value, long WaitTime = 2000) where T : Response
+		{
+			return await Send<T>(Value, HasEncryptedConnection, WaitTime);
+		}
+
+		public async Task<T> Send<T>(Request Value, bool Encrypted, long WaitTime = 2000) where T : Response
 		{
 			Send(Value, Encrypted);
 

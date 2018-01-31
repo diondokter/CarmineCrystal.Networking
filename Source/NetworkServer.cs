@@ -30,7 +30,7 @@ namespace CarmineCrystal.Networking
 
 			NetworkServer.ProcessingModules = ProcessingModules;
 
-			Listener = new TcpListener(IPAddress.Any, Port);
+			Listener = new TcpListener(IPAddress.IPv6Any, Port);
 			Listener.Start();
 
 			ListenerCancelToken = new CancellationTokenSource();
