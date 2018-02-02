@@ -23,13 +23,7 @@ namespace CarmineCrystal.Networking
 
 	public abstract class GenericMessageProcessingModule<T> : MessageProcessingModule where T : Message
 	{
-		public override Type AcceptedType
-		{
-			get
-			{
-				return typeof(T);
-			}
-		}
+		public override Type AcceptedType => typeof(T);
 
 		protected override void Run(Message RunTarget, NetworkClient Sender)
 		{
@@ -41,13 +35,7 @@ namespace CarmineCrystal.Networking
 
 	public abstract class GenericRequestProcessingModule<T, U> : MessageProcessingModule where T : Request where U : Response
 	{
-		public override Type AcceptedType
-		{
-			get
-			{
-				return typeof(T);
-			}
-		}
+		public override Type AcceptedType => typeof(T);
 
 		protected override void Run(Message RunTarget, NetworkClient Sender)
 		{
@@ -56,6 +44,29 @@ namespace CarmineCrystal.Networking
 			{
 				Returned.ID = ((Request)RunTarget).ID;
 				Sender.Send(Returned);
+			}
+		}
+
+		protected abstract U Run(T RunTarget, NetworkClient Sender);
+	}
+
+	public abstract class GenericEncryptedRequestProcessingModule<T, U> : MessageProcessingModule where T : Request where U : Response
+	{
+		public override Type AcceptedType => typeof(T);
+
+		protected override void Run(Message RunTarget, NetworkClient Sender)
+		{
+			if (!Sender.HasEncryptedConnection)
+			{
+				// We don't have an encrypted connection, so we can't send anything encrypted back
+				return;
+			}
+
+			U Returned = Run((T)RunTarget, Sender);
+			if (Returned != null)
+			{
+				Returned.ID = ((Request)RunTarget).ID;
+				Sender.SendEncrypted(Returned);
 			}
 		}
 
