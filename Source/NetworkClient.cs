@@ -140,17 +140,20 @@ namespace CarmineCrystal.Networking
 			return Response;
 		}
 
-		public async Task<bool> InitializeEncryption()
+		public async Task<bool> InitializeEncryption(RSAParameters? Parameters = null, int AESKeySize = 256)
 		{
-			int RSAKeySize = 4096;
-			int AESKeySize = 256;
-
 			RSA RSAEncryption = RSA.Create();
-			RSAEncryption.KeySize = RSAKeySize;
+			RSAParameters PublicParameters;
+			RSAEncryption.KeySize = Parameters?.D?.Length * 8 ?? 4096;
 
-			RSAParameters PublicParameters = RSAEncryption.ExportParameters(false);
+			if (Parameters != null)
+			{
+				RSAEncryption.ImportParameters(Parameters.Value);
+			}
 
-			KeyExchangeRequest Request = new KeyExchangeRequest() { RSAKeySize = RSAKeySize, AESKeySize = AESKeySize, RSAExponent = PublicParameters.Exponent, RSAModulus = PublicParameters.Modulus };
+			PublicParameters = RSAEncryption.ExportParameters(false);
+
+			KeyExchangeRequest Request = new KeyExchangeRequest() { RSAKeySize = RSAEncryption.KeySize, AESKeySize = AESKeySize, RSAExponent = PublicParameters.Exponent, RSAModulus = PublicParameters.Modulus };
 			KeyExchangeResponse Response = await Send<KeyExchangeResponse>(Request);
 
 			if (Response?.Accepted ?? false)
@@ -257,11 +260,20 @@ namespace CarmineCrystal.Networking
 		private bool Disposed = false;
 		public void Dispose()
 		{
-			lock (Client)
+			if (Disposed)
 			{
-				Client.Dispose();
-				Disposed = true;
+				return;
 			}
+
+			if (Client != null)
+			{
+				lock (Client)
+				{
+					Client.Dispose();
+				}
+			}
+
+			Disposed = true;
 		}
 	}
 }
