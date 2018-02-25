@@ -6,8 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 
-[assembly: InternalsVisibleTo("CarmineCrystal.Networking.Tests")]
-
 namespace CarmineCrystal.Networking
 {
 	[ProtoContract]

@@ -15,11 +15,13 @@ namespace CarmineCrystal.Networking
 	{
 		public IPAddress ConnectedIP => ((IPEndPoint)Client?.Client.RemoteEndPoint).Address;
 		public bool IsConnected => Client.Connected;
-		public bool DataAvailable => _NetworkConnection?.DataAvailable ?? false;
 		public bool HasEncryptedConnection => Cryptor != null;
+		public bool IsLocalClientAuthenticated { get; private set; }
+		public bool IsRemoteClientAuthenticated { get; private set; }
 
 		private static readonly DelegateMessageProcessingModule<PingRequest> PingProcessingModule = new DelegateMessageProcessingModule<PingRequest>((RunTarget, Sender) => Sender.Send(new PingResponse() { Time = RunTarget.Time, ID = RunTarget.ID }));
 		private static readonly DelegateMessageProcessingModule<KeyExchangeRequest> KeyExchangeProcessingModule = new DelegateMessageProcessingModule<KeyExchangeRequest>((RunTarget, Sender) => Sender.ProcessKeyExchange(RunTarget));
+		private static readonly DelegateMessageProcessingModule<AuthenticationRequest> AuthenticationProcessingModule = new DelegateMessageProcessingModule<AuthenticationRequest>((RunTarget, Sender) => Sender.ProcessAuthentication(RunTarget));
 
 		private List<Response> ResponseBuffer = new List<Response>();
 		private TcpClient Client;
@@ -51,21 +53,27 @@ namespace CarmineCrystal.Networking
 				return _NetworkConnection;
 			}
 		}
+		private bool DataAvailable => _NetworkConnection?.DataAvailable ?? false;
 
 		private MessageProcessingModule[] ProcessingModules;
 
-		public NetworkClient(TcpClient Client, params MessageProcessingModule[] ProcessingModules)
+		public delegate (bool Accepted, string Reason) AuthenticationHandler(NetworkClient Caller, string Username, string Password);
+		private AuthenticationHandler AuthenticationCallback;
+
+		public NetworkClient(TcpClient Client, AuthenticationHandler AuthenticationCallback = null, params MessageProcessingModule[] ProcessingModules)
 		{
 			this.Client = Client;
 			this.ProcessingModules = ProcessingModules;
+			this.AuthenticationCallback = AuthenticationCallback;
 
 			new Task(LoopReceive).Start();
 		}
 
-		public NetworkClient(string Host, int Port, params MessageProcessingModule[] ProcessingModules)
+		public NetworkClient(string Host, int Port, AuthenticationHandler AuthenticationCallback = null, params MessageProcessingModule[] ProcessingModules)
 		{
 			Client = new TcpClient(Host, Port);
 			this.ProcessingModules = ProcessingModules;
+			this.AuthenticationCallback = AuthenticationCallback;
 
 			new Task(LoopReceive).Start();
 		}
@@ -190,6 +198,52 @@ namespace CarmineCrystal.Networking
 			Send(Response);
 		}
 
+		public async Task<(bool Accepted, string Reason)> Authenticate(string Username, string Password)
+		{
+			if (IsLocalClientAuthenticated)
+			{
+				return (true, "Local client already has been authenticated.");
+			}
+
+			if (!HasEncryptedConnection)
+			{
+				return (false, "No encrypted connection has been established.");
+			}
+
+			AuthenticationRequest Request = new AuthenticationRequest() { Username = Username, Password = Password };
+			AuthenticationResponse Response = await SendEncrypted<AuthenticationResponse>(Request);
+
+			if (Response == null)
+			{
+				return (false, "No response was given.");
+			}
+
+			IsLocalClientAuthenticated = Response.Accepted;
+
+			return (Response.Accepted, Response.Reason);
+		}
+
+		private void ProcessAuthentication(AuthenticationRequest Request)
+		{
+			if (IsRemoteClientAuthenticated)
+			{
+				SendEncrypted(new AuthenticationResponse() { ID = Request.ID, Accepted = true, Reason = "Remote client is already authenticated." });
+				return;
+			}
+
+			(bool Accepted, string Reason)? Result = AuthenticationCallback?.Invoke(this, Request.Username, Request.Password);
+
+			if (Result == null)
+			{
+				IsRemoteClientAuthenticated = true;
+				SendEncrypted(new AuthenticationResponse() { ID = Request.ID, Accepted = true, Reason = "No authentication method is available. Any authentication request will be accepted." });
+				return;
+			}
+
+			IsRemoteClientAuthenticated = Result.Value.Accepted;
+			SendEncrypted(new AuthenticationResponse() { ID = Request.ID, Accepted = Result.Value.Accepted, Reason = Result.Value.Reason });
+		}
+
 		private async void LoopReceive()
 		{
 			while (!Disposed)
@@ -223,8 +277,9 @@ namespace CarmineCrystal.Networking
 				{
 					new Task(() =>
 					{
-						KeyExchangeProcessingModule.Process(ReceivedMessage, this);
 						PingProcessingModule.Process(ReceivedMessage, this);
+						KeyExchangeProcessingModule.Process(ReceivedMessage, this);
+						AuthenticationProcessingModule.Process(ReceivedMessage, this);
 						for (int i = 0; i < ProcessingModules.Length; i++)
 						{
 							ProcessingModules[i].Process(ReceivedMessage, this);
@@ -274,6 +329,17 @@ namespace CarmineCrystal.Networking
 			}
 
 			Disposed = true;
+		}
+
+		public async Task<TimeSpan> GetPing()
+		{
+			PingResponse Response = await Send<PingResponse>(new PingRequest() { Time = DateTime.Now });
+			return (DateTime.Now - Response?.Time) ?? TimeSpan.MaxValue;
+		}
+
+		public async Task<bool> CheckConnection()
+		{
+			return await GetPing() != TimeSpan.MaxValue;
 		}
 	}
 }

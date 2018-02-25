@@ -19,10 +19,10 @@ namespace CarmineCrystal.Networking
 		public static ReadOnlyCollection<NetworkClient> Clients => _Clients.AsReadOnly();
 		private static TcpListener Listener;
 		private static TcpListener ListenerV6;
-		private static CancellationTokenSource ListenerCancelToken;
 		private static MessageProcessingModule[] ProcessingModules;
+		private static NetworkClient.AuthenticationHandler AuthenticationCallback;
 
-		public static void Start(int Port, params MessageProcessingModule[] ProcessingModules)
+		public static void Start(int Port, NetworkClient.AuthenticationHandler AuthenticationCallback = null, params MessageProcessingModule[] ProcessingModules)
 		{
 			if (Started)
 			{
@@ -30,6 +30,7 @@ namespace CarmineCrystal.Networking
 			}
 
 			NetworkServer.ProcessingModules = ProcessingModules;
+			NetworkServer.AuthenticationCallback = AuthenticationCallback;
 
 			Listener = new TcpListener(IPAddress.Any, Port);
 			Listener.Start();
@@ -37,9 +38,8 @@ namespace CarmineCrystal.Networking
 			ListenerV6 = new TcpListener(IPAddress.IPv6Any, Port);
 			ListenerV6.Start();
 
-			ListenerCancelToken = new CancellationTokenSource();
-			new Task(() => Listen(Listener), ListenerCancelToken.Token).Start();
-			new Task(() => Listen(ListenerV6), ListenerCancelToken.Token).Start();
+			new Task(() => Listen(() => Listener)).Start();
+			new Task(() => Listen(() => ListenerV6)).Start();
 			Started = true;
 		}
 
@@ -49,8 +49,6 @@ namespace CarmineCrystal.Networking
 			{
 				return;
 			}
-
-			ListenerCancelToken.Cancel();
 
 			Listener?.Stop();
 			Listener = null;
@@ -62,14 +60,14 @@ namespace CarmineCrystal.Networking
 			Started = false;
 		}
 
-		private static async void Listen(TcpListener TargetListener)
+		private static async void Listen(Func<TcpListener> TargetListenerGetter)
 		{
-			while (TargetListener != null)
+			while (TargetListenerGetter() != null)
 			{
 				try
 				{
-					TcpClient NewClient = await TargetListener.AcceptTcpClientAsync();
-					NetworkClient NewNetworkClient = new NetworkClient(NewClient, ProcessingModules);
+					TcpClient NewClient = await TargetListenerGetter().AcceptTcpClientAsync();
+					NetworkClient NewNetworkClient = new NetworkClient(NewClient, AuthenticationCallback, ProcessingModules);
 					_Clients.Add(NewNetworkClient);
 					ClientAdded?.Invoke(NewNetworkClient);
 				}
@@ -92,6 +90,23 @@ namespace CarmineCrystal.Networking
 		}
 
 		public static void BroadcastEncrypted(Message message)
+		{
+			if (message is Request)
+			{
+				throw new ArgumentException("A request message can't be broadcast because there is no way to listen for the responses properly.", nameof(message));
+			}
+
+			// Reverse order so that if a client gets removed, it will not skip an other client
+			for (int i = Clients.Count - 1; i >= 0; i--)
+			{
+				if (Clients[i].HasEncryptedConnection)
+				{
+					Clients[i].SendEncrypted(message);
+				}
+			}
+		}
+
+		public static void BroadcastAuthenticated(Message message)
 		{
 			if (message is Request)
 			{
