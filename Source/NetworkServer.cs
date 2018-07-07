@@ -116,7 +116,7 @@ namespace CarmineCrystal.Networking
 			// Reverse order so that if a client gets removed, it will not skip an other client
 			for (int i = Clients.Count - 1; i >= 0; i--)
 			{
-				if (Clients[i].HasEncryptedConnection)
+				if (Clients[i].IsRemoteClientAuthenticated)
 				{
 					Clients[i].SendEncrypted(message);
 				}

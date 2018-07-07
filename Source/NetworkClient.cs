@@ -308,7 +308,18 @@ namespace CarmineCrystal.Networking
 					return null;
 				}
 
-				return Message.DeserializeFrom(Connection);
+				try
+				{
+					return Message.DeserializeFrom(Connection);
+				}
+				catch (Exception e)
+				{
+					Console.WriteLine(e);
+					Console.WriteLine("Response buffer count: " + ResponseBuffer.Count);
+					Console.WriteLine("Connection Position | Length: " + Connection.Position + " | " + Connection.Length);
+
+					return null;
+				}
 			}
 		}
 
