@@ -316,7 +316,6 @@ namespace CarmineCrystal.Networking
 				{
 					Console.WriteLine(e);
 					Console.WriteLine("Response buffer count: " + ResponseBuffer.Count);
-					Console.WriteLine("Connection Position | Length: " + Connection.Position + " | " + Connection.Length);
 
 					return null;
 				}
