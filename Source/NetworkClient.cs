@@ -57,6 +57,7 @@ namespace CarmineCrystal.Networking
 
 		private MessageProcessingModule[] ProcessingModules;
 
+		public string AuthenticatedUsername { get; private set; }
 		public delegate (bool Accepted, string Reason) AuthenticationHandler(NetworkClient Caller, string Username, string Password);
 		private AuthenticationHandler AuthenticationCallback;
 
@@ -233,15 +234,13 @@ namespace CarmineCrystal.Networking
 
 			(bool Accepted, string Reason)? Result = AuthenticationCallback?.Invoke(this, Request.Username, Request.Password);
 
-			if (Result == null)
+			if (Result?.Accepted ?? true)
 			{
-				IsRemoteClientAuthenticated = true;
-				SendEncrypted(new AuthenticationResponse() { ID = Request.ID, Accepted = true, Reason = "No authentication method is available. Any authentication request will be accepted." });
-				return;
+				AuthenticatedUsername = Request.Username;
 			}
 
-			IsRemoteClientAuthenticated = Result.Value.Accepted;
-			SendEncrypted(new AuthenticationResponse() { ID = Request.ID, Accepted = Result.Value.Accepted, Reason = Result.Value.Reason });
+			IsRemoteClientAuthenticated = Result?.Accepted ?? true;
+			SendEncrypted(new AuthenticationResponse() { ID = Request.ID, Accepted = Result?.Accepted ?? true, Reason = Result?.Reason ?? "No authentication method is available. Any authentication request will be accepted." });
 		}
 
 		private async void LoopReceive()
@@ -350,6 +349,11 @@ namespace CarmineCrystal.Networking
 		public async Task<bool> CheckConnection()
 		{
 			return await GetPing() != TimeSpan.MaxValue;
+		}
+
+		public override string ToString()
+		{
+			return $"Network client {{{ConnectedIP}}} [{AuthenticatedUsername}]";
 		}
 	}
 }
