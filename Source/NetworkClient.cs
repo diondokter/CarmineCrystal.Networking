@@ -88,13 +88,13 @@ namespace CarmineCrystal.Networking
 		{
 			lock (Client)
 			{
-				if (!Client.Connected || Connection == null)
-				{
-					throw new SocketException((int)SocketError.NotConnected);
-				}
-
 				try
 				{
+					if (!Client.Connected || Connection == null)
+					{
+						throw new SocketException((int)SocketError.NotConnected);
+					}
+
 					if (Encrypted)
 					{
 						if (Cryptor == null)
@@ -109,8 +109,10 @@ namespace CarmineCrystal.Networking
 
 					Value.SerializeInto(Connection);
 				}
-				catch (IOException)
+				catch (Exception e)
 				{
+					Console.WriteLine(e);
+
 					if (NetworkServer.Started)
 					{
 						NetworkServer.RemoveClient(this, NetworkServer.ClientRemoveReason.Disconnect);
@@ -245,46 +247,60 @@ namespace CarmineCrystal.Networking
 
 		private async void LoopReceive()
 		{
-			while (!Disposed)
+			try
 			{
-				Message ReceivedMessage = Receive();
-
-				if (ReceivedMessage == null)
+				while (!Disposed)
 				{
-					await Task.Delay(5);
-					continue;
-				}
+					Message ReceivedMessage = Receive();
 
-				if (ReceivedMessage is EncryptedMessage ReceivedEncryptedMessage)
-				{
-					if (Cryptor == null)
+					if (ReceivedMessage == null)
 					{
+						await Task.Delay(5);
 						continue;
 					}
 
-					ReceivedMessage = ReceivedEncryptedMessage.GetPayload(Cryptor);
-				}
-
-				if (ReceivedMessage is Response)
-				{
-					lock (ResponseBuffer)
+					if (ReceivedMessage is EncryptedMessage ReceivedEncryptedMessage)
 					{
-						ResponseBuffer.Add((Response)ReceivedMessage);
+						if (Cryptor == null)
+						{
+							continue;
+						}
+
+						ReceivedMessage = ReceivedEncryptedMessage.GetPayload(Cryptor);
+					}
+
+					if (ReceivedMessage is Response)
+					{
+						lock (ResponseBuffer)
+						{
+							ResponseBuffer.Add((Response)ReceivedMessage);
+						}
+					}
+					else
+					{
+						new Task(() =>
+						{
+							PingProcessingModule.Process(ReceivedMessage, this);
+							KeyExchangeProcessingModule.Process(ReceivedMessage, this);
+							AuthenticationProcessingModule.Process(ReceivedMessage, this);
+							for (int i = 0; i < ProcessingModules.Length; i++)
+							{
+								ProcessingModules[i].Process(ReceivedMessage, this);
+							}
+						}).Start();
 					}
 				}
-				else
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine(e);
+
+				if (NetworkServer.Started)
 				{
-					new Task(() =>
-					{
-						PingProcessingModule.Process(ReceivedMessage, this);
-						KeyExchangeProcessingModule.Process(ReceivedMessage, this);
-						AuthenticationProcessingModule.Process(ReceivedMessage, this);
-						for (int i = 0; i < ProcessingModules.Length; i++)
-						{
-							ProcessingModules[i].Process(ReceivedMessage, this);
-						}
-					}).Start();
+					NetworkServer.RemoveClient(this, NetworkServer.ClientRemoveReason.Disconnect);
 				}
+
+				return;
 			}
 		}
 
